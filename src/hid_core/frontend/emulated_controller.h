@@ -626,6 +626,12 @@ private:
     OutputParams output_params;
 
     ButtonDevices button_devices;
+    // A second input per button, kept in the button's own param as "alt" (a serialized param package), so it is saved and
+    // loaded with it. Either input presses the button; it is released when neither is held.
+    ButtonParams alt_button_params;
+    ButtonDevices alt_button_devices;
+    std::array<Common::Input::ButtonStatus, Settings::NativeButton::NumButtons> main_button_status{};
+    std::array<Common::Input::ButtonStatus, Settings::NativeButton::NumButtons> alt_button_status{};
     StickDevices stick_devices;
     ControllerMotionDevices motion_devices;
     TriggerDevices trigger_devices;

@@ -201,6 +201,13 @@ void EmulatedController::LoadDevices() {
     LoadVirtualGamepadParams();
 
     std::ranges::transform(button_params, button_devices.begin(), Common::Input::CreateInputDevice);
+    for (std::size_t index = 0; index < button_params.size(); ++index) {
+        alt_button_params[index] = button_params[index].Has("alt")
+                                       ? Common::ParamPackage{button_params[index].Get("alt", "")}
+                                       : Common::ParamPackage{};
+    }
+    std::ranges::transform(alt_button_params, alt_button_devices.begin(),
+                           Common::Input::CreateInputDevice);
     std::ranges::transform(stick_params, stick_devices.begin(), Common::Input::CreateInputDevice);
     std::ranges::transform(motion_params, motion_devices.begin(), Common::Input::CreateInputDevice);
     std::ranges::transform(trigger_params, trigger_devices.begin(),
@@ -337,18 +344,49 @@ void EmulatedController::LoadVirtualGamepadParams() {
 void EmulatedController::ReloadInput() {
     // If you load any device here add the equivalent to the UnloadInput() function
     LoadDevices();
+    main_button_status = {};
+    alt_button_status = {};
+    // Both inputs of a button report here under the first input's uuid: the button is pressed while either is held. The
+    // first input's toggle and turbo apply to the pair.
+    const auto set_merged = [this](std::size_t index, Common::UUID uuid) {
+        const auto& main = main_button_status[index];
+        Common::Input::CallbackStatus merged{};
+        merged.type = Common::Input::InputType::Button;
+        merged.button_status.value = main.value || alt_button_status[index].value;
+        merged.button_status.toggle = main.toggle;
+        merged.button_status.turbo = main.turbo;
+        SetButton(merged, index, uuid);
+    };
     for (std::size_t index = 0; index < button_devices.size(); ++index) {
-        if (!button_devices[index]) {
-            continue;
-        }
         const auto uuid = Common::UUID{button_params[index].Get("guid", "")};
-        button_devices[index]->SetCallback({
-            .on_change =
-                [this, index, uuid](const Common::Input::CallbackStatus& callback) {
-                    SetButton(callback, index, uuid);
-                },
-        });
-        button_devices[index]->ForceUpdate();
+        if (button_devices[index]) {
+            button_devices[index]->SetCallback({
+                .on_change =
+                    [this, index, uuid, set_merged](const Common::Input::CallbackStatus& callback) {
+                        if (!alt_button_devices[index]) {
+                            SetButton(callback, index, uuid);   // (one input: as before)
+                            return;
+                        }
+                        main_button_status[index] = TransformToButton(callback);
+                        set_merged(index, uuid);
+                    },
+            });
+        }
+        if (alt_button_devices[index]) {
+            alt_button_devices[index]->SetCallback({
+                .on_change =
+                    [this, index, uuid, set_merged](const Common::Input::CallbackStatus& callback) {
+                        alt_button_status[index] = TransformToButton(callback);
+                        set_merged(index, uuid);
+                    },
+            });
+        }
+        if (button_devices[index]) {
+            button_devices[index]->ForceUpdate();
+        }
+        if (alt_button_devices[index]) {
+            alt_button_devices[index]->ForceUpdate();
+        }
     }
 
     for (std::size_t index = 0; index < stick_devices.size(); ++index) {
@@ -530,6 +568,9 @@ void EmulatedController::ReloadInput() {
 void EmulatedController::UnloadInput() {
     is_initialized = false;
     for (auto& button : button_devices) {
+        button.reset();
+    }
+    for (auto& button : alt_button_devices) {
         button.reset();
     }
     for (auto& stick : stick_devices) {
