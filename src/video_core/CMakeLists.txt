@@ -489,7 +489,7 @@ endif()
 
 target_link_libraries(video_core PUBLIC common core)
 if(WIN32)
-    target_link_libraries(video_core PRIVATE advapi32)
+    target_link_libraries(video_core PRIVATE advapi32 dwmapi)   # (dwmapi: vk_host_pacer.cpp; its #pragma comment is MSVC-only)
 endif()
 
 # Shader warm-up builder: game archives use zstd (also with dictionaries) and zlib.
