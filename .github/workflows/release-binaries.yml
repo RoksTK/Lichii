@@ -79,9 +79,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # (fork) Windows only
-          - platform: windows-x86_64
-            runner: windows-2022
+          # (fork) Windows only, the PGO (MinGW clang) build the releases are made from: the MSVC one stops at
+          # frizti_settings.cpp (C4459 as an error)
           - platform: windows-x86_64-pgo
             runner: windows-2022
             pgo: true
