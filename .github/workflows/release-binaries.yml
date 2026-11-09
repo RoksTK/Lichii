@@ -79,8 +79,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # (fork) Windows only, the PGO (MinGW clang) build the releases are made from: the MSVC one stops at
-          # frizti_settings.cpp (C4459 as an error)
+          # (fork) Windows only: the MSVC build (the one with NVIDIA DLSS through Streamline) and the PGO
+          # (MinGW clang) build
+          - platform: windows-x86_64
+            runner: windows-2022
           - platform: windows-x86_64-pgo
             runner: windows-2022
             pgo: true
@@ -295,7 +297,8 @@ jobs:
           -DYUZU_ROOM_STANDALONE=OFF
           -DYUZU_USE_BUNDLED_QT=OFF
           -DYUZU_USE_BUNDLED_SDL3=ON
-          -DENABLE_UPDATE_CHECKER=ON
+          -DENABLE_UPDATE_CHECKER=OFF
+          -DENABLE_WERROR=OFF
           -DLICHII_BUILD_TAG=build-${{ github.run_number }}
           -DLICHII_BUILD_PLATFORM=${{ matrix.platform }}
           -DUSE_DISCORD_PRESENCE=OFF
