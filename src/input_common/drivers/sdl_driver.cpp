@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <numbers>
 #include "common/logging.h"
 #include "common/math_util.h"
@@ -141,7 +142,15 @@ public:
             last_motion_update = sensor_timestamp;
             return false;
         }
-        if (sensor_timestamp < last_motion_update) {
+        last_motion_event = std::chrono::steady_clock::now();
+        // The sensor clock can start over, e.g. after another program (Steam's desktop layout,
+        // an alt-tab) took the controller for a moment. Rejecting every older timestamp would
+        // drop all motion until the controller is selected again: start counting from here.
+        // A gap of over a second is treated the same, so the first delta isn't a huge jump.
+        constexpr u64 MaxMotionGapNs = 1'000'000'000;
+        if (sensor_timestamp < last_motion_update ||
+            sensor_timestamp - last_motion_update > MaxMotionGapNs) {
+            last_motion_update = sensor_timestamp;
             return false;
         }
 
@@ -189,6 +198,25 @@ public:
         motion_restart_threshold = InitialMotionRestartThreshold;
         motion.delta_timestamp = time_difference;
         return true;
+    }
+
+    /// Restarts the sensors when they have sent nothing for a while (the controller was taken by
+    /// another program while the window was in the background), at most every two seconds.
+    void CheckMotionStall(std::chrono::steady_clock::time_point now) {
+        std::scoped_lock lock{mutex};
+        if (!HasMotion()) {
+            return;
+        }
+        if (last_motion_event == std::chrono::steady_clock::time_point{}) {
+            last_motion_event = now;
+            return;
+        }
+        if (now - last_motion_event < std::chrono::seconds{1} ||
+            now - last_motion_restart < std::chrono::seconds{2}) {
+            return;
+        }
+        last_motion_restart = now;
+        EnableMotion();
     }
 
     const BasicMotion& GetMotion() const {
@@ -407,6 +435,8 @@ private:
     mutable std::mutex mutex;
 
     u64 last_motion_update{};
+    std::chrono::steady_clock::time_point last_motion_event{};
+    std::chrono::steady_clock::time_point last_motion_restart{};
     static constexpr std::size_t InitialMotionRestartThreshold = 200;
     static constexpr std::size_t MaxMotionRestartThreshold = 200 * 64;
     std::size_t motion_error_count{};
@@ -588,8 +618,21 @@ void SDLDriver::CloseJoystick(SDL_Joystick* sdl_joystick) {
 }
 
 void SDLDriver::PumpEvents() const {
-    if (initialized) {
-        SDL_PumpEvents();
+    if (!initialized) {
+        return;
+    }
+    SDL_PumpEvents();
+    // Copied out first: restarting a sensor may run the event watcher, which takes the map lock.
+    std::vector<std::shared_ptr<SDLJoystick>> joysticks;
+    {
+        std::scoped_lock lock{joystick_map_mutex};
+        for (const auto& [guid, list] : joystick_map) {
+            joysticks.insert(joysticks.end(), list.begin(), list.end());
+        }
+    }
+    const auto now = std::chrono::steady_clock::now();
+    for (const auto& joystick : joysticks) {
+        joystick->CheckMotionStall(now);
     }
 }
 
