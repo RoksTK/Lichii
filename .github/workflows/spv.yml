@@ -1,0 +1,17 @@
+name: spv
+on: push
+jobs:
+  spv:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq glslang-tools >/dev/null
+      - run: |
+          set -e
+          glslangValidator --version | head -1
+          for f in shaders/*.comp; do
+            base=$(basename "$f" .comp)
+            name=$(echo "${base}_COMP_SPV" | tr a-z A-Z)
+            glslangValidator -V --target-env vulkan1.3 --vn "$name" -o "shaders/${base}_comp_spv.h" "$f"
+          done
+          for h in shaders/*_spv.h; do echo "@@FILE $(basename $h)"; cat "$h"; echo "@@END"; done
